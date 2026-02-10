@@ -1,64 +1,58 @@
+// constants/Colors.ts
 import { useColorScheme } from "react-native";
 
 export type AppColors = {
-  // Brand
   primary: string;
   primary2: string;
   secondary: string;
 
-  // Basics
   black: string;
   white: string;
 
-  // Screen / surfaces
   homeBg: string;
   sheetBg: string;
   cardBg: string;
   modalBg: string;
 
-  // Text
   text: string;
   textOnDark: string;
   textMuted: string;
   textMuted2: string;
 
-  // Lines / borders
   border: string;
   divider: string;
   handle: string;
 
-  // States / accents
   link: string;
   danger: string;
+  success: string;
+
   selectionBg: string;
 
-  // Chips (hero location)
   chipBg: string;
   chipBorder: string;
   chipChevron: string;
 
-  // Shadows
   shadow: string;
 
-  // Gradients
   heroGradient: [string, string, string];
   primaryGradient: [string, string];
 
-  // Tabs
   tabBarBg: string;
   tabBarActive: string;
   tabBarInactive: string;
 };
 
-const BRAND = {
+export const BRAND = {
   primary: "#1a2a6c",
   primary2: "#2a4a8c",
   secondary: "#FFD700",
   link: "#007AFF",
   danger: "#FF3B30",
+  success: "#22C55E",
 };
 
-export const Colors: Record<"light" | "dark", AppColors> = {
+export const BaseColors: Record<"light" | "dark", AppColors> = {
   light: {
     primary: BRAND.primary,
     primary2: BRAND.primary2,
@@ -67,7 +61,7 @@ export const Colors: Record<"light" | "dark", AppColors> = {
     black: "#000000",
     white: "#FFFFFF",
 
-    homeBg: "#000000",
+    homeBg: "#F0F2F5",
     sheetBg: "#F7F9FC",
     cardBg: "#FFFFFF",
     modalBg: "#FFFFFF",
@@ -83,6 +77,8 @@ export const Colors: Record<"light" | "dark", AppColors> = {
 
     link: BRAND.link,
     danger: BRAND.danger,
+    success: BRAND.success,
+
     selectionBg: "#F0F8FF",
 
     chipBg: "rgba(0,0,0,0.40)",
@@ -108,9 +104,9 @@ export const Colors: Record<"light" | "dark", AppColors> = {
     white: "#FFFFFF",
 
     homeBg: "#000000",
-    sheetBg: "#0B0B0B",
-    cardBg: "#121212",
-    modalBg: "#0B0B0B",
+    sheetBg: "#121212",
+    cardBg: "#1E1E1E",
+    modalBg: "#121212",
 
     text: "#F5F5F5",
     textOnDark: "#FFFFFF",
@@ -123,6 +119,8 @@ export const Colors: Record<"light" | "dark", AppColors> = {
 
     link: BRAND.link,
     danger: BRAND.danger,
+    success: "#34D399",
+
     selectionBg: "rgba(26,42,108,0.18)",
 
     chipBg: "rgba(0,0,0,0.45)",
@@ -140,7 +138,10 @@ export const Colors: Record<"light" | "dark", AppColors> = {
   },
 };
 
+// Optional: keep if you still use it in some screens.
+// IMPORTANT: This hook does NOT include ThemeContext overrides.
+// Use useTheme().colors for live updates.
 export function useAppColors(): AppColors {
   const scheme = useColorScheme();
-  return Colors[scheme === "dark" ? "dark" : "light"];
+  return BaseColors[scheme === "dark" ? "dark" : "light"];
 }

@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { useAppColors } from "../constants/Colors";
+// components/NextPrayerCountdown.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Animated, StyleSheet, View, Text } from "react-native"; // ✅ Text for timer only
+import { useTheme } from "../utils/ThemeContext";
+import ThemedText from "./ThemedText";
 
 interface Props {
   nextPrayerTime: Date | null;
@@ -16,9 +18,16 @@ const ARABIC_NAMES: Record<string, string> = {
   Sunrise: "الشروق",
 };
 
+// Unicode direction marks
+const LRM = "\u200E"; // left-to-right mark
+
 export default function NextPrayerCountdown({ nextPrayerTime, nextPrayerName }: Props) {
-  const C = useAppColors();
-  const [timeLeft, setTimeLeft] = useState("");
+  const { colors: C, primaryColor, scale } = useTheme();
+
+  const [timeLeft, setTimeLeft] = useState("- : - : -");
+  const [isUrgent, setIsUrgent] = useState(false);
+
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (!nextPrayerTime) return;
@@ -28,9 +37,12 @@ export default function NextPrayerCountdown({ nextPrayerTime, nextPrayerName }: 
       const diff = nextPrayerTime.getTime() - now.getTime();
 
       if (diff <= 0) {
-        setTimeLeft("الآن");
+        setTimeLeft("00 : 00 : 00");
+        setIsUrgent(false);
         return;
       }
+
+      setIsUrgent(diff < 10 * 60 * 1000);
 
       const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
       const minutes = Math.floor((diff / (1000 * 60)) % 60);
@@ -40,72 +52,77 @@ export default function NextPrayerCountdown({ nextPrayerTime, nextPrayerName }: 
       const m = String(minutes).padStart(2, "0");
       const s = String(seconds).padStart(2, "0");
 
-      // ✅ RTL version:
-      // Use RLM (Right-to-Left Mark) to keep minus in correct position in RTL
-      const RLM = "\u200F";
-      const minus = "−"; // real minus
-
-      // In RTL, putting RLM before minus helps it stay visually correct
-      setTimeLeft(`${RLM}${minus}${h}:${m}:${s}`);
+      setTimeLeft(`${h} : ${m} : ${s}`);
     }, 1000);
 
     return () => clearInterval(interval);
   }, [nextPrayerTime]);
 
+  useEffect(() => {
+    if (isUrgent) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scaleAnim, { toValue: 1.04, duration: 1000, useNativeDriver: true }),
+          Animated.timing(scaleAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      scaleAnim.setValue(1);
+    }
+  }, [isUrgent, scaleAnim]);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: { alignItems: "center", justifyContent: "center", paddingVertical: 5 },
+
+        // ✅ Timer must be plain Text (LTR) to avoid RTL mirroring
+        timerText: {
+          fontSize: scale(32),
+          fontWeight: "800",
+          fontVariant: ["tabular-nums"],
+          letterSpacing: 2,
+          color: isUrgent ? C.danger : C.text,
+          textAlign: "center",
+          writingDirection: "ltr",
+        },
+
+        labelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+
+        // ✅ NO fontFamily here -> let ThemedText enforce it globally
+        labelText: {
+          color: C.textMuted,
+          fontWeight: "600",
+          fontSize: scale(13),
+        },
+
+        // ✅ NO fontFamily here -> let ThemedText enforce it globally
+        prayerName: {
+          color: primaryColor,
+          fontWeight: "900",
+          fontSize: scale(14),
+        },
+      }),
+    [C, isUrgent, primaryColor, scale]
+  );
+
   if (!nextPrayerTime) return null;
 
   const arabicName = nextPrayerName ? ARABIC_NAMES[nextPrayerName] || nextPrayerName : "";
 
-  const styles = StyleSheet.create({
-    container: {
-      alignItems: "center",
-      justifyContent: "center",
-      marginVertical: 10,
-    },
-    label: {
-      color: C.secondary,
-      fontSize: 18,
-      fontWeight: "700",
-      textShadowColor: "rgba(0,0,0,0.50)",
-      textShadowOffset: { width: 0, height: 1 },
-      textShadowRadius: 3,
-    },
-    timer: {
-      color: C.textOnDark,
-      fontSize: 50,
-      fontWeight: "200",
-      fontVariant: ["tabular-nums"],
-
-      // ✅ THE CHANGE: RTL direction
-      writingDirection: "rtl",
-      textAlign: "center",
-
-      textShadowColor: "rgba(0,0,0,0.30)",
-      textShadowOffset: { width: 0, height: 4 },
-      textShadowRadius: 10,
-      lineHeight: 70,
-    },
-    subTime: {
-      color: C.textOnDark,
-      fontSize: 20,
-      fontWeight: "500",
-      marginTop: 5,
-      textShadowColor: "rgba(0,0,0,0.50)",
-      textShadowOffset: { width: 0, height: 1 },
-      textShadowRadius: 3,
-    },
-  });
+  // ✅ Wrap with LRM to force correct number order in RTL layouts
+  const safeTime = `${LRM}${timeLeft}${LRM}`;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>الصلاة التالية: {arabicName}</Text>
+    <Animated.View style={[styles.container, { transform: [{ scale: scaleAnim }] }]}>
+      <Text style={styles.timerText}>{safeTime}</Text>
 
-      {/* ✅ RTL timer */}
-      <Text style={styles.timer}>{timeLeft}</Text>
-
-      <Text style={styles.subTime}>
-        {nextPrayerTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
-      </Text>
-    </View>
+      <View style={styles.labelRow}>
+        <ThemedText style={styles.labelText}>المتبقي على</ThemedText>
+        <ThemedText style={styles.prayerName}>{arabicName}</ThemedText>
+      </View>
+    </Animated.View>
   );
 }

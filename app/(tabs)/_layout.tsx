@@ -1,25 +1,33 @@
+// app/(tabs)/_layout.tsx
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAppColors } from "@/constants/Colors"; // ✅ uses your Colors.ts
+import { useMemo } from "react";
+import { useTheme } from "../../utils/ThemeContext";
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  const C = useAppColors();
 
-  const baseHeight = Platform.OS === "android" ? 62 : 82;
-  const basePaddingTop = 6;
-  const basePaddingBottom = Platform.OS === "android" ? 10 : 22;
+  // ✅ use fontFamily (resolved) not fontType
+  const { colors: C, primaryColor, fontFamily, scale } = useTheme();
 
-  // ✅ "compass" exists in many MDI versions, but not all.
-  // We'll prefer it, and fall back to "compass" if you get an unknown icon error.
-  const qiblaIconFocused = "compass" as any;
-  const qiblaIconDefault = "compass" as any;
+  const isAndroid = Platform.OS === "android";
 
-  // ✅ Tasbih-like options (pick one). "counter" is a very good tasbih feel.
-  const azkarIconFocused = "counter" as any;
-  const azkarIconDefault = "counter" as any;
+  const height = (isAndroid ? 60 : 78) + insets.bottom;
+  const paddingTop = 6;
+  const paddingBottom = (isAndroid ? 10 : 16) + insets.bottom;
+
+  const tabLabelStyle = useMemo(
+    () => ({
+      fontSize: scale(12),
+      marginTop: 2,
+      writingDirection: "rtl" as const,
+      textAlign: "center" as const,
+      fontFamily, // ✅ now tabs follow selected font
+    }),
+    [fontFamily, scale]
+  );
 
   return (
     <Tabs
@@ -27,21 +35,28 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarHideOnKeyboard: true,
 
-        tabBarActiveTintColor: C.tabBarActive,
-        tabBarInactiveTintColor: C.tabBarInactive,
+        tabBarActiveTintColor: primaryColor,
+        tabBarInactiveTintColor: C.textMuted2,
 
-        tabBarLabelStyle: {
-          fontSize: 12,
-          marginTop: 2,
-        },
+        tabBarLabelStyle: tabLabelStyle,
 
         tabBarStyle: {
-          backgroundColor: C.tabBarBg,
+          backgroundColor: C.cardBg,
           borderTopColor: C.border,
+          borderTopWidth: 1,
 
-          height: baseHeight + insets.bottom,
-          paddingTop: basePaddingTop,
-          paddingBottom: basePaddingBottom + insets.bottom,
+          height,
+          paddingTop,
+          paddingBottom,
+
+          ...(Platform.OS === "ios"
+            ? {
+                shadowColor: "#000",
+                shadowOpacity: 0.06,
+                shadowRadius: 10,
+                shadowOffset: { width: 0, height: -6 },
+              }
+            : { elevation: 10 }),
         },
       }}
     >
@@ -65,8 +80,21 @@ export default function TabsLayout() {
           title: "القبلة",
           tabBarIcon: ({ color, size, focused }) => (
             <MaterialCommunityIcons
-              // ✅ preferred: compass / fallback: compass
-              name={(focused ? qiblaIconFocused : qiblaIconDefault) ?? (focused ? "compass" : "compass-outline")}
+              name={focused ? "compass" : "compass-outline"}
+              color={color}
+              size={size}
+            />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="quran"
+        options={{
+          title: "القرآن",
+          tabBarIcon: ({ color, size, focused }) => (
+            <MaterialCommunityIcons
+              name={focused ? "book-open-page-variant" : "book-open-page-variant-outline"}
               color={color}
               size={size}
             />
@@ -80,8 +108,7 @@ export default function TabsLayout() {
           title: "الأذكار",
           tabBarIcon: ({ color, size, focused }) => (
             <MaterialCommunityIcons
-              // ✅ Tasbih-like icon
-              name={focused ? azkarIconFocused : azkarIconDefault}
+              name={focused ? "hand-heart" : "hand-heart-outline"}
               color={color}
               size={size}
             />
@@ -95,7 +122,7 @@ export default function TabsLayout() {
           title: "الإعدادات",
           tabBarIcon: ({ color, size, focused }) => (
             <MaterialCommunityIcons
-              name={focused ? "cog" : "cog-outline"} // ✅ gear
+              name={focused ? "cog" : "cog-outline"}
               color={color}
               size={size}
             />

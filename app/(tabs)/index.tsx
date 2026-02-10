@@ -1,50 +1,27 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useAudioPlayer } from "expo-audio";
-import { LinearGradient } from "expo-linear-gradient";
+// app/(tabs)/index.tsx
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
-  FlatList,
-  ImageBackground,
-  Modal,
+  Linking,
   RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAppColors, type AppColors } from "@/constants/Colors";
-
 import NextPrayerCountdown from "../../components/NextPrayerCountdown";
-import {
-  AZAN_SOUNDS,
-  getSoundPreference,
-  saveSoundPreference,
-  type AzanSound,
-} from "../../utils/audioSettings";
+import ThemedText from "../../components/ThemedText";
 import { checkAndroidBackgroundRestrictions } from "../../utils/autostart";
-import { EGYPT_CITIES, type City } from "../../utils/egyptLocations";
-import {
-  refreshPrayerSchedule,
-  saveLocationPreference,
-  scheduleTestAzan,
-  type PrayerItem,
-} from "../../utils/scheduler";
+import { getHijriText } from "../../utils/hijri";
+import { refreshPrayerSchedule, type PrayerItem } from "../../utils/scheduler";
+import { useTheme } from "../../utils/ThemeContext";
 
 const { width, height } = Dimensions.get("window");
-
-// ✅ Map must match the lowercase filenames in assets/ folder exactly
-const SOUND_MAP: Record<string, any> = {
-  azan_nasser_elktamy: require("../../assets/azan_nasser_elktamy.mp3"),
-  azan_egypt: require("../../assets/azan_egypt.mp3"),
-  azan_good: require("../../assets/azan_good.mp3"),
-  azan_good_2: require("../../assets/azan_good_2.mp3"),
-  azan_abdel_baset: require("../../assets/azan_abdel_baset.mp3"),
-};
 
 const ARABIC_NAMES: Record<string, string> = {
   Fajr: "الفجر",
@@ -55,338 +32,236 @@ const ARABIC_NAMES: Record<string, string> = {
   Sunrise: "الشروق",
 };
 
-export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
-  const C = useAppColors();
+// TOP AZKAR shortcuts
+const TOP_AZKAR = [
+  { id: "morning", title: "أذكار الصباح", icon: "weather-sunset-up", route: "/(tabs)/azkar/morning" },
+  { id: "evening", title: "أذكار المساء", icon: "weather-night", route: "/(tabs)/azkar/evening" },
+  { id: "post_prayer", title: "بعد الصلاة", icon: "hand-heart", route: "/(tabs)/azkar/afterPrayer" },
+  { id: "tasbih", title: "تسابيح", icon: "counter", route: "/(tabs)/azkar/tasabeeh" },
+  { id: "sleep", title: "أذكار النوم", icon: "bed", route: "/(tabs)/azkar/sleep" },
+  { id: "waking", title: "الاستيقاظ", icon: "alarm", route: "/(tabs)/azkar/wakeUp" },
+];
 
-  const styles = useMemo(() => makeStyles(C, insets.bottom), [C, insets.bottom]);
+// Services
+const SERVICES_GRID = [
+  { id: "azkar", title: "أذكار", icon: "book-heart", route: "/(tabs)/azkar" },
+  { id: "quran", title: "القرآن", icon: "book-open-page-variant", route: "/(tabs)/quran" },
+  { id: "duas", title: "الأدعية", icon: "hands-pray", route: "/(tabs)/azkar/prophetic_duas" },
+  { id: "adhan", title: "الآذان", icon: "alarm", route: "/(tabs)/settings" },
+  { id: "qibla", title: "القبلة", icon: "compass", route: "/(tabs)/qibla" },
+
+  // external
+  { id: "calendar", title: "التقويم", icon: "calendar-month", route: "https://hijri-calendar.com/" },
+  { id: "mosques", title: "المساجد", icon: "mosque", route: "__MOSQUES__" },
+  { id: "radio", title: "الإذاعة", icon: "radio", route: "__RADIO__" },
+  { id: "settings", title: "الإعدادات", icon: "cog", route: "/(tabs)/settings" },
+  { id: "hadith", title: "صحيح البخاري", icon: "script-text", route: "https://shamela.ws/book/1681" },
+] as const;
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+
+  // ✅ Live theme
+  const { colors, primaryColor, scale } = useTheme();
+
+  const styles = useMemo(() => makeStyles(primaryColor, colors, scale), [primaryColor, colors, scale]);
 
   const [refreshing, setRefreshing] = useState(false);
   const [nextPrayer, setNextPrayer] = useState<PrayerItem | null>(null);
   const [todayPrayers, setTodayPrayers] = useState<PrayerItem[]>([]);
   const [locationName, setLocationName] = useState("جاري التحديد...");
-  const [locationModalVisible, setLocationModalVisible] = useState(false);
-
-  // Audio State
-  const [soundModalVisible, setSoundModalVisible] = useState(false);
-  const [soundName, setSoundName] = useState("الافتراضي");
-  const [selectedSoundId, setSelectedSoundId] = useState("azan_nasser_elktamy");
-
-  // ✅ Preview player
-  const [previewId, setPreviewId] = useState<string | null>(null);
-  const [audioSource, setAudioSource] = useState<any>(null);
-  const player = useAudioPlayer(audioSource);
-
-  useEffect(() => {
-    if (player && previewId) player.play();
-  }, [player, previewId]);
-
-  const todayDate = new Date().toLocaleDateString("ar-EG", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
+  const [hijriText, setHijriText] = useState("");
 
   useEffect(() => {
     checkAndroidBackgroundRestrictions();
-    loadSettings();
     handleSync(false);
+    loadHijri(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadSettings = async () => {
-    const prefId = await getSoundPreference();
-    setSelectedSoundId(prefId);
-    const soundObj = AZAN_SOUNDS.find((s) => s.id === prefId);
-    if (soundObj) setSoundName(soundObj.name);
+  const loadHijri = async (force = false) => {
+    const text = await getHijriText({ force });
+    setHijriText(text);
   };
 
   const handleSync = async (force: boolean = false) => {
     setRefreshing(true);
     try {
-      const result = await refreshPrayerSchedule({ daysAhead: 5, forceGps: force });
+      const result = await refreshPrayerSchedule({ daysAhead: 2, forceGps: force });
       setNextPrayer(result.nextPrayer);
       setTodayPrayers(result.todayPrayers);
       if (result.locationName) setLocationName(result.locationName);
-    } catch {
-      // quiet fail
     } finally {
       setRefreshing(false);
     }
   };
 
-  const testAdhan = async () => {
-    await scheduleTestAzan(5);
-    alert("تم جدولة تجربة الآذان خلال 5 ثواني");
-  };
-
-  const selectCity = async (city: City) => {
-    setLocationModalVisible(false);
-    setLocationName(city.name);
-    await saveLocationPreference("manual", { lat: city.lat, lng: city.lng, name: city.name });
-    handleSync(true);
-  };
-
-  const selectAuto = async () => {
-    setLocationModalVisible(false);
-    setLocationName("جاري تحديد الموقع...");
-    await saveLocationPreference("auto");
-    handleSync(true);
-  };
-
-  const handleSoundSelect = async (sound: AzanSound) => {
-    if (player?.playing) player.pause();
-    setPreviewId(null);
-    setAudioSource(null);
-
-    setSelectedSoundId(sound.id);
-    setSoundName(sound.name);
-    await saveSoundPreference(sound.id);
-    setSoundModalVisible(false);
-
-    handleSync(false);
-  };
-
-  const playPreview = (id: string) => {
-    const asset = SOUND_MAP[id];
-    if (!asset) return alert("الملف الصوتي غير موجود في الأصول");
-
-    if (previewId === id && player?.playing) {
-      player.pause();
-      setPreviewId(null);
-      setAudioSource(null);
-    } else {
-      setAudioSource(asset);
-      setPreviewId(id);
+  const handlePress = (route: string) => {
+    if (route === "__MOSQUES__") {
+      return Linking.openURL("https://www.google.com/maps/search/" + encodeURIComponent("مسجد"));
     }
+    if (route === "__RADIO__") {
+      return Linking.openURL("https://www.holyquranradio.com/?m=1");
+    }
+    if (route.startsWith("__")) return;
+
+    // @ts-ignore
+    router.push(route);
   };
+
+  const gregDate = new Date().toLocaleDateString("ar-EG", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
   return (
-    <View style={styles.mainContainer}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={primaryColor} />
 
-      {/* HERO */}
-      <ImageBackground
-        source={require("../../assets/mosque.jpg")}
-        style={[styles.headerBg, { paddingTop: insets.top + 10 }]}
-        resizeMode="cover"
-      >
-        <LinearGradient colors={C.heroGradient} style={StyleSheet.absoluteFill} />
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
+        <View style={styles.topRow}>
+          <View>
+            <ThemedText style={styles.dateText}>{gregDate}</ThemedText>
+            <ThemedText style={styles.hijriText}>{hijriText}</ThemedText>
+          </View>
 
-        <View style={styles.topBar}>
-          <TouchableOpacity style={styles.locationBtn} onPress={() => setLocationModalVisible(true)}>
-            <Ionicons name="location-sharp" size={16} color={C.secondary} style={{ marginRight: 6 }} />
-            <Text style={styles.locationText}>{locationName}</Text>
-            <Ionicons name="chevron-down" size={14} color={C.chipChevron} style={{ marginLeft: 6 }} />
-          </TouchableOpacity>
-
-          <Text style={styles.dateText}>{todayDate}</Text>
+          <View style={styles.locationPill}>
+            <Ionicons name="location" size={14} color={primaryColor} />
+            <ThemedText style={styles.locationText}>{locationName}</ThemedText>
+          </View>
         </View>
+      </View>
 
-        <View style={styles.countdownWrapper}>
-          <NextPrayerCountdown
-            nextPrayerTime={nextPrayer?.time || null}
-            nextPrayerName={nextPrayer?.name || null}
-          />
-        </View>
-      </ImageBackground>
-
-      {/* SHEET */}
-      <View style={styles.sheetContainer}>
+      {/* Content */}
+      <View style={styles.sheet}>
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={{ paddingBottom: 80, paddingTop: 25 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => handleSync(true)}
-              tintColor={C.primary}
+              onRefresh={() => {
+                handleSync(true);
+                loadHijri(true);
+              }}
+              colors={[primaryColor]}
             />
           }
         >
-          <View style={styles.handleBar} />
-
-          {todayPrayers.map((p, i) => {
-            const isNext = p.name === nextPrayer?.name;
-            const arabicName = ARABIC_NAMES[p.name] || p.name;
-
-            return (
-              <View key={`${p.name}-${i}`} style={[styles.prayerRow, isNext && styles.activeRow]}>
-                <Text style={[styles.prayerTime, isNext && styles.activeText]}>
-                  {p.time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
-                </Text>
-
-                <View style={styles.rowRight}>
-                  <Text style={[styles.prayerName, isNext && styles.activeText]}>{arabicName}</Text>
-                  <Ionicons
-                    name={isNext ? "time" : "ellipse-outline"}
-                    size={18}
-                    color={isNext ? C.textOnDark : C.textMuted2}
-                  />
+          {/* Top Azkar */}
+          <View style={styles.azkarGrid}>
+            {TOP_AZKAR.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.azkarItem}
+                onPress={() => handlePress(item.route)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.azkarIconCircle, { backgroundColor: primaryColor + "15" }]}>
+                  <MaterialCommunityIcons name={item.icon as any} size={24} color={primaryColor} />
                 </View>
-              </View>
-            );
-          })}
 
-          <View style={styles.controlsRow}>
-            <TouchableOpacity style={styles.controlBtn} onPress={testAdhan}>
-              <LinearGradient colors={C.primaryGradient} style={styles.controlBtnGradient}>
-                <Ionicons name="play-circle" size={20} color={C.secondary} />
-                <Text style={styles.controlBtnText}>تجربة الآذان (5ث)</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+                <ThemedText style={styles.azkarLabel} numberOfLines={1}>
+                  {item.title}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-            <TouchableOpacity style={styles.controlBtn} onPress={() => setSoundModalVisible(true)}>
-              <LinearGradient colors={C.primaryGradient} style={styles.controlBtnGradient}>
-                <Ionicons name="volume-high" size={20} color={C.secondary} />
-                <Text style={styles.controlBtnText}>تغيير الآذان</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+          {/* Prayer Card */}
+          <View style={styles.prayerCard}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.prayerStrip}>
+              {todayPrayers.map((p, i) => {
+                const isNext = p.name === nextPrayer?.name;
+                return (
+                  <View key={i} style={[styles.prayerItem, isNext && styles.prayerItemActive]}>
+                    <ThemedText style={[styles.prayerName, isNext && styles.activeText]}>
+                      {ARABIC_NAMES[p.name]}
+                    </ThemedText>
+
+                    <ThemedText style={[styles.prayerTime, isNext && styles.activeText]}>
+                      {p.time
+                        .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+                        .replace(/AM|PM/i, "")
+                        .trim()}
+                    </ThemedText>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.cardDivider} />
+
+            <View style={styles.counterSection}>
+              <NextPrayerCountdown
+                nextPrayerTime={nextPrayer?.time || null}
+                nextPrayerName={nextPrayer?.name || null}
+              />
+            </View>
+          </View>
+
+          {/* Services */}
+          <ThemedText style={styles.sectionTitle}>الخدمات</ThemedText>
+
+          <View style={styles.gridContainer}>
+            {SERVICES_GRID.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.gridItem}
+                onPress={() => handlePress(item.route)}
+                activeOpacity={0.85}
+              >
+                <View
+                  style={[
+                    styles.gridIconCircle,
+                    { backgroundColor: primaryColor + "10", borderColor: primaryColor + "20" },
+                  ]}
+                >
+                  <MaterialCommunityIcons name={item.icon as any} size={26} color={primaryColor} />
+                </View>
+
+                <ThemedText style={styles.gridLabel}>{item.title}</ThemedText>
+              </TouchableOpacity>
+            ))}
           </View>
         </ScrollView>
       </View>
-
-      {/* LOCATION MODAL */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={locationModalVisible}
-        onRequestClose={() => setLocationModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>تغيير الموقع</Text>
-              <TouchableOpacity onPress={() => setLocationModalVisible(false)}>
-                <Ionicons name="close" size={24} color={C.text} />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.autoLocationBtn} onPress={selectAuto}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Ionicons name="navigate-circle" size={28} color={C.link} />
-                <Text style={styles.autoText}>تحديد تلقائي (GPS)</Text>
-              </View>
-              <Ionicons name="chevron-back" size={20} color={C.textMuted2} />
-            </TouchableOpacity>
-
-            <Text style={styles.sectionTitle}>محافظات مصر</Text>
-
-            <FlatList
-              data={EGYPT_CITIES}
-              keyExtractor={(item) => item.nameEn}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.cityItem} onPress={() => selectCity(item)}>
-                  <Text style={styles.cityName}>{item.name}</Text>
-                  <Text style={styles.cityNameEn}>{item.nameEn}</Text>
-                </TouchableOpacity>
-              )}
-              style={{ maxHeight: height * 0.4 }}
-            />
-          </View>
-        </View>
-      </Modal>
-
-      {/* SOUND MODAL */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={soundModalVisible}
-        onRequestClose={() => setSoundModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: "60%" }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>صوت الآذان</Text>
-              <TouchableOpacity onPress={() => setSoundModalVisible(false)}>
-                <Ionicons name="close" size={24} color={C.text} />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={AZAN_SOUNDS}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => {
-                const selected = item.id === selectedSoundId;
-
-                return (
-                  <View style={[styles.cityItem, selected && styles.selectedRow]}>
-                    <TouchableOpacity
-                      style={{ flex: 1, flexDirection: "row-reverse", alignItems: "center", gap: 10 }}
-                      onPress={() => handleSoundSelect(item)}
-                    >
-                      {selected && <Ionicons name="checkmark-circle" size={24} color={C.link} />}
-                      <Text style={[styles.cityName, selected && styles.selectedText]}>{item.name}</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={() => playPreview(item.id)} style={{ padding: 8 }}>
-                      <Ionicons
-                        name={previewId === item.id ? "stop-circle" : "play-circle"}
-                        size={32}
-                        color={previewId === item.id ? C.danger : C.primary}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                );
-              }}
-            />
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
 
-function makeStyles(C: AppColors, safeBottom: number) {
+function makeStyles(primary: string, C: any, scale: (n: number) => number) {
   return StyleSheet.create({
-    mainContainer: {
-      flex: 1,
-      backgroundColor: C.homeBg,
-    },
-    headerBg: {
-      width,
-      height: height * 0.4,
-      justifyContent: "space-between",
-      paddingHorizontal: 20,
-      paddingBottom: 40,
-    },
-    topBar: {
-      flexDirection: "row-reverse",
-      justifyContent: "space-between",
-      alignItems: "center",
-    },
-    dateText: {
-      color: C.textOnDark,
-      fontSize: 14,
-      opacity: 0.9,
-      fontWeight: "600",
-    },
-    locationBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingVertical: 6,
-      paddingHorizontal: 12,
-      backgroundColor: C.chipBg,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: C.chipBorder,
-    },
-    locationText: {
-      color: C.textOnDark,
-      fontSize: 16,
-      fontWeight: "bold",
-      textShadowColor: "rgba(0,0,0,0.5)",
-      textShadowOffset: { width: 0, height: 1 },
-      textShadowRadius: 4,
-    },
-    countdownWrapper: {
-      flex: 1,
-      justifyContent: "center",
-      alignItems: "center",
-      marginBottom: 40,
-    },
+    container: { flex: 1, backgroundColor: C.sheetBg },
 
-    sheetContainer: {
+    header: {
+      width,
+      height: height * 0.2,
+      backgroundColor: primary,
+      paddingHorizontal: 20,
+    },
+    topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+
+    // ✅ No fontFamily here (ThemedText handles it)
+    dateText: { color: "#FFF", fontSize: scale(16), fontWeight: "900", textAlign: "left" },
+    hijriText: { color: "#FFF", fontSize: scale(16), fontWeight: "900", marginTop: 4, textAlign: "left" },
+
+    locationPill: {
+      flexDirection: "row",
+      backgroundColor: "#FFF",
+      borderRadius: 20,
+      paddingVertical: 5,
+      paddingHorizontal: 10,
+      alignItems: "center",
+      gap: 5,
+      elevation: 2,
+    },
+    locationText: { color: primary, fontSize: scale(12), fontWeight: "900", textAlign: "left" },
+
+    sheet: {
       flex: 1,
       marginTop: -30,
       backgroundColor: C.sheetBg,
@@ -394,170 +269,87 @@ function makeStyles(C: AppColors, safeBottom: number) {
       borderTopRightRadius: 30,
       overflow: "hidden",
     },
-    scrollContent: {
-      padding: 20,
-      paddingTop: 10,
-      paddingBottom: 40 + safeBottom, // ✅ safe with tabs
-    },
-    handleBar: {
-      width: 40,
-      height: 4,
-      backgroundColor: C.handle,
-      borderRadius: 2,
-      alignSelf: "center",
-      marginBottom: 20,
-      marginTop: 10,
-    },
 
-    prayerRow: {
+    azkarGrid: {
       flexDirection: "row",
+      flexWrap: "wrap",
       justifyContent: "space-between",
-      alignItems: "center",
-      paddingVertical: 16,
-      paddingHorizontal: 20,
-      marginBottom: 10,
+      paddingHorizontal: 15,
+      marginBottom: 20,
+    },
+    azkarItem: {
+      width: "31%",
       backgroundColor: C.cardBg,
-      borderRadius: 16,
+      borderRadius: 12,
+      paddingVertical: 12,
+      alignItems: "center",
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: C.divider,
+      elevation: 1,
       shadowColor: C.shadow,
-      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 3,
+      shadowOffset: { width: 0, height: 1 },
+    },
+    azkarIconCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      justifyContent: "center",
+      alignItems: "center",
+      marginBottom: 6,
+    },
+    azkarLabel: { fontSize: scale(12), fontWeight: "800", color: C.text, textAlign: "center" },
+
+    prayerCard: {
+      backgroundColor: C.cardBg,
+      marginHorizontal: 15,
+      borderRadius: 18,
+      paddingVertical: 15,
+      elevation: 2,
+      marginBottom: 25,
+      borderWidth: 1,
+      borderColor: C.divider,
+      shadowColor: C.shadow,
       shadowOpacity: 0.05,
       shadowRadius: 5,
-      elevation: 2,
-      borderWidth: 1,
-      borderColor: C.border,
     },
-    activeRow: {
-      backgroundColor: C.primary,
-      transform: [{ scale: 1.02 }],
-      shadowColor: C.primary,
-      shadowOpacity: 0.3,
-      shadowRadius: 10,
-      elevation: 8,
-      borderColor: "transparent",
-    },
-    rowRight: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-    },
-    prayerName: {
-      fontSize: 18,
-      color: C.text,
-      fontWeight: "600",
-    },
-    prayerTime: {
-      fontSize: 18,
-      color: C.text,
-      fontWeight: "700",
-    },
-    activeText: {
-      color: C.secondary,
-    },
+    prayerStrip: { paddingHorizontal: 15, gap: 5 },
+    prayerItem: { alignItems: "center", paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, minWidth: 60 },
+    prayerItemActive: { backgroundColor: primary },
+    prayerName: { fontSize: scale(11), color: C.textMuted, marginBottom: 4, textAlign: "left" },
+    prayerTime: { fontSize: scale(13), fontWeight: "900", color: C.text, textAlign: "left" },
+    activeText: { color: "#FFF" },
 
-    controlsRow: {
-      flexDirection: "row-reverse",
-      justifyContent: "space-between",
-      gap: 15,
-      marginTop: 20,
-      paddingHorizontal: 10,
-    },
-    controlBtn: {
-      flex: 1,
-      borderRadius: 25,
-      overflow: "hidden",
-      shadowColor: C.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 5,
-    },
-    controlBtnGradient: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      paddingVertical: 14,
-      gap: 8,
-    },
-    controlBtnText: {
-      color: C.textOnDark,
-      fontSize: 14,
-      fontWeight: "bold",
-    },
+    cardDivider: { height: 1, backgroundColor: C.divider, marginVertical: 15, marginHorizontal: 20 },
+    counterSection: { alignItems: "center", paddingHorizontal: 20 },
 
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.5)",
-      justifyContent: "flex-end",
-    },
-    modalContent: {
-      backgroundColor: C.modalBg,
-      borderTopLeftRadius: 25,
-      borderTopRightRadius: 25,
-      padding: 20,
-      maxHeight: "80%",
-      borderTopWidth: 1,
-      borderColor: C.border,
-    },
-    modalHeader: {
-      flexDirection: "row-reverse",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 20,
-    },
-    modalTitle: {
-      fontSize: 20,
-      fontWeight: "bold",
-      color: C.text,
-    },
-
-    autoLocationBtn: {
-      flexDirection: "row-reverse",
-      justifyContent: "space-between",
-      alignItems: "center",
-      backgroundColor: C.selectionBg,
-      padding: 15,
-      borderRadius: 12,
-      marginBottom: 20,
-      borderWidth: 1,
-      borderColor: C.link,
-    },
-    autoText: {
-      fontSize: 16,
-      fontWeight: "600",
-      color: C.link,
-    },
     sectionTitle: {
-      fontSize: 14,
+      fontSize: scale(14),
+      fontWeight: "900",
       color: C.textMuted,
-      marginBottom: 10,
-      textAlign: "right",
-    },
-    cityItem: {
-      paddingVertical: 15,
-      borderBottomWidth: 1,
-      borderBottomColor: C.divider,
-      flexDirection: "row-reverse",
-      justifyContent: "space-between",
-      alignItems: "center",
-    },
-    cityName: {
-      fontSize: 18,
-      color: C.text,
-    },
-    cityNameEn: {
-      fontSize: 14,
-      color: C.textMuted,
+      marginHorizontal: 20,
+      marginBottom: 12,
+      textAlign: "left",
     },
 
-    selectedRow: {
-      backgroundColor: C.selectionBg,
-      borderRadius: 12,
-      paddingHorizontal: 10,
-      borderBottomColor: "transparent",
+    gridContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      paddingHorizontal: 15,
+      justifyContent: "space-between",
     },
-    selectedText: {
-      color: C.link,
-      fontWeight: "bold",
+    gridItem: { width: "23%", alignItems: "center", marginBottom: 20 },
+    gridIconCircle: {
+      width: 50,
+      height: 50,
+      borderRadius: 20,
+      justifyContent: "center",
+      alignItems: "center",
+      marginBottom: 8,
+      borderWidth: 1,
     },
+    gridLabel: { fontSize: scale(11), color: C.text, fontWeight: "800", textAlign: "center" },
   });
 }

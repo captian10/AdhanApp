@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "AdhanApp",
+    "name": "رحاب الصالحين",
     "slug": "AdhanApp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,14 +8,22 @@
     "scheme": "adhanapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "نحتاج إلى موقعك لتحديد اتجاه القبلة ومواقيت الصلاة بدقة."
+      }
     },
     "android": {
       "package": "com.captian10.AdhanApp",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.FOREGROUND_SERVICE",
@@ -54,7 +62,16 @@
           ]
         }
       ],
-      "expo-audio"
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "نحتاج إلى موقعك لتحديد اتجاه القبلة ومواقيت الصلاة."
+        }
+      ],
+      "expo-audio",
+      "expo-asset",
+      "expo-file-system",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
